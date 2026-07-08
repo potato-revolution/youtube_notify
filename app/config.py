@@ -36,6 +36,10 @@ SMTP_PORT = 465
 
 HTTP_TIMEOUT = 30.0
 
+# Shorts / ライブ判定プローブ用の User-Agent。ブラウザを装わないと watch ページの
+# 一部フラグ(isLiveContent 等)が省略されることがあるため明示する。
+HTTP_USER_AGENT = "Mozilla/5.0"
+
 
 def _require_env(name: str) -> str:
     value = os.environ.get(name)
