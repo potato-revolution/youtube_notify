@@ -42,6 +42,21 @@ python -m app.run
 
 定時実行は GitHub Actions が毎晩 22:00 JST(cron `0 13 * * *`)に行う。手動トリガーは Actions タブの workflow_dispatch から。
 
+### 初期シード(登録直後に一度だけ)
+
+チャンネル登録直後は各チャンネルの RSS に過去動画(最大15本)が載っているため、`app.run` をそのまま実行すると大量のバックログを一括要約してしまう。これを避けるため、初回は **シード**を使う。
+
+- 各チャンネル直近 N 本のみ要約してメール送信し、現在の新着全 ID を既読(`seen.json`)として記録する。
+- 以降の `app.run` は登録後に出た新着のみを処理する。
+
+GitHub Actions の workflow_dispatch で `seed_recent` に本数(例: `2`)を入力して実行するか、ローカルで:
+
+```bash
+python -m app.seed --recent 2
+```
+
+`seed_recent` を空欄にすると通常実行(`app.run`)になる。
+
 ## 開発
 
 ```bash

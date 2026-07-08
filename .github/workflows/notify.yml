@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "0 13 * * *" # 22:00 JST
   workflow_dispatch:
+    inputs:
+      seed_recent:
+        description: "初期シード: 各チャンネル直近N本のみ要約し残りは既読登録(空欄=通常実行)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -32,7 +37,13 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-        run: python -m app.run
+          SEED_RECENT: ${{ github.event.inputs.seed_recent }}
+        run: |
+          if [ -n "$SEED_RECENT" ]; then
+            python -m app.seed --recent "$SEED_RECENT"
+          else
+            python -m app.run
+          fi
 
       - name: Commit seen state
         run: |

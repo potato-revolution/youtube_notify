@@ -15,6 +15,10 @@ GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 # seen.json の保持上限(超過分は古い順に切り詰め)
 SEEN_IDS_MAX = 5000
 
+# Gemini 1 リクエストのタイムアウト(ミリ秒)。
+# 長尺動画で処理が固まってもジョブ全体が止まらないよう上限を設ける。
+GEMINI_TIMEOUT_MS = 180_000
+
 SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 465
 

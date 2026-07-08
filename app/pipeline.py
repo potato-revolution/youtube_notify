@@ -75,6 +75,72 @@ def run_pipeline(
     return len(new_videos)
 
 
+def pick_recent_per_channel(videos: list[Video], recent: int) -> list[Video]:
+    """各チャンネルの先頭 recent 本を選ぶ(RSS は新しい順のため直近 N 本になる)。"""
+    counts: dict[str, int] = {}
+    picked: list[Video] = []
+    for video in videos:
+        key = video.channel_title
+        if counts.get(key, 0) < recent:
+            counts[key] = counts.get(key, 0) + 1
+            picked.append(video)
+    return picked
+
+
+def seed_pipeline(
+    recent_per_channel: int,
+    store: ConfigStore | None = None,
+    fetcher: RssFetcher | None = None,
+    summarizer: Summarizer | None = None,
+    builder: MailBuilder | None = None,
+    sender: MailSender | None = None,
+) -> int:
+    """一度きりの初期シード。
+
+    各チャンネル直近 recent_per_channel 本のみ要約してメール送信し、
+    現在 RSS にある新着の全 ID を既読として記録する。
+    これにより、登録直後のバックログ(数十本)を一括要約せずに運用を開始できる。
+    以降の run_pipeline は登録後に出た新着のみを処理する。
+    """
+    store = store or ConfigStore()
+    fetcher = fetcher or RssFetcher()
+    builder = builder or MailBuilder()
+
+    channels = store.load_channels()
+    if not channels:
+        logger.info("監視チャンネルが未登録のため終了します")
+        return 0
+
+    seen = store.load_seen()
+    videos = fetcher.fetch(channels)
+    new_videos = filter_new(videos, seen)
+    if not new_videos:
+        logger.info("シード対象の新着はありません")
+        return 0
+
+    to_summarize = pick_recent_per_channel(new_videos, recent_per_channel)
+
+    summarizer = summarizer or Summarizer()
+    sender = sender or MailSender()
+    for video in to_summarize:
+        summarizer.summarize(video)
+    subject, html_body = builder.build(to_summarize)
+    sender.send(subject, html_body)  # 失敗時は例外 → seen 未更新のまま異常終了
+
+    # 送信成功後にのみ、現在の新着全 ID を既読化する(要約しなかった分も再通知しない)
+    store.save_seen([v.video_id for v in new_videos])
+
+    ok = sum(1 for v in to_summarize if v.summary_ok)
+    logger.info(
+        "SEED: channels=%d seeded=%d summarized=%d summary_ok=%d",
+        len(channels),
+        len(new_videos),
+        len(to_summarize),
+        ok,
+    )
+    return len(to_summarize)
+
+
 def _log_kpi_summary(channels: int, new: int, ok: int, ng: int, sent: bool) -> None:
     """KPI 測定用サマリー(docs/architecture.md「運用監視・KPI 測定」の実装要件)。"""
     logger.info(

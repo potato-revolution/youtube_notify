@@ -26,7 +26,10 @@ SUMMARY_PROMPT = """\
 
 class Summarizer:
     def __init__(self, api_key: str | None = None, model: str | None = None) -> None:
-        self._client = genai.Client(api_key=api_key or config.gemini_api_key())
+        self._client = genai.Client(
+            api_key=api_key or config.gemini_api_key(),
+            http_options=types.HttpOptions(timeout=config.GEMINI_TIMEOUT_MS),
+        )
         self._model = model or config.GEMINI_MODEL
 
     def summarize(self, video: Video) -> Video:
