@@ -29,8 +29,10 @@ class FakeModels:
         self._results = list(results)
         self.calls = 0
 
-    def generate_content(self, model, contents):
+    def generate_content(self, model, contents, config=None):
         self.calls += 1
+        self.last_contents = contents
+        self.last_config = config
         result = self._results.pop(0)
         if isinstance(result, Exception):
             raise result
@@ -41,6 +43,7 @@ def make_summarizer(monkeypatch, results: list) -> tuple[Summarizer, FakeModels]
     # 実クライアントを作らずに Summarizer を組み立てる
     monkeypatch.setattr(summarizer_module.config, "GEMINI_RETRY", 2, raising=True)
     monkeypatch.setattr(summarizer_module.config, "GEMINI_RETRY_WAIT_SEC", 0, raising=True)
+    monkeypatch.setattr(summarizer_module.config, "GEMINI_REQUEST_SPACING_SEC", 0, raising=True)
     monkeypatch.setattr(summarizer_module.time, "sleep", lambda *_: None)
     s = Summarizer.__new__(Summarizer)
     fake_models = FakeModels(results)
@@ -50,6 +53,7 @@ def make_summarizer(monkeypatch, results: list) -> tuple[Summarizer, FakeModels]
 
     s._client = FakeClient()
     s._model = "gemini-test"
+    s._made_call = False
     return s, fake_models
 
 
@@ -98,6 +102,14 @@ def test_summarize_empty_text_is_failure(monkeypatch):
     s, _ = make_summarizer(monkeypatch, ["   "])
     result = s.summarize(make_video())
     assert result.summary_ok is False
+
+
+def test_summarize_applies_low_fps_and_media_resolution(monkeypatch):
+    s, models = make_summarizer(monkeypatch, ["要約"])
+    s.summarize(make_video())
+    video_part = models.last_contents[0]
+    assert video_part.video_metadata.fps == 0.2
+    assert models.last_config.media_resolution == "MEDIA_RESOLUTION_LOW"
 
 
 def test_describe_error_api_error_includes_code_and_status():

@@ -32,9 +32,11 @@ class Summarizer:
             http_options=types.HttpOptions(timeout=config.GEMINI_TIMEOUT_MS),
         )
         self._model = model or config.GEMINI_MODEL
+        self._made_call = False  # 動画間スペーシング用(初回だけ待たない)
 
     def summarize(self, video: Video) -> Video:
         """summary / summary_ok を埋めて返す。失敗時は代替表示(呼び出し側)に委ねる。"""
+        self._space_requests()
         try:
             text = self._generate_with_retry(video)
             if not text:
@@ -58,9 +60,17 @@ class Summarizer:
                 response = self._client.models.generate_content(
                     model=self._model,
                     contents=[
-                        types.Part.from_uri(file_uri=video.url, mime_type="video/*"),
+                        types.Part(
+                            file_data=types.FileData(file_uri=video.url, mime_type="video/*"),
+                            # fps を下げてフレーム数=トークン消費を削減する
+                            video_metadata=types.VideoMetadata(fps=config.GEMINI_VIDEO_FPS),
+                        ),
                         SUMMARY_PROMPT,
                     ],
+                    config=types.GenerateContentConfig(
+                        # フレームあたりのトークン解像度を下げる
+                        media_resolution=config.GEMINI_MEDIA_RESOLUTION,
+                    ),
                 )
                 return (response.text or "").strip()
             except errors.ServerError as e:
@@ -75,6 +85,12 @@ class Summarizer:
                 )
                 time.sleep(config.GEMINI_RETRY_WAIT_SEC)
         return ""  # 到達しない(ループ内で return / raise する)
+
+    def _space_requests(self) -> None:
+        """2本目以降の呼び出し前に待機し、1分あたりレート上限(TPM)超過を避ける。"""
+        if self._made_call and config.GEMINI_REQUEST_SPACING_SEC > 0:
+            time.sleep(config.GEMINI_REQUEST_SPACING_SEC)
+        self._made_call = True
 
 
 def _describe_error(e: Exception) -> str:

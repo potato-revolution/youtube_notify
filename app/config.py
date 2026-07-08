@@ -24,6 +24,13 @@ GEMINI_TIMEOUT_MS = 600_000
 GEMINI_RETRY = 2
 GEMINI_RETRY_WAIT_SEC = 10
 
+# 動画要約のトークン消費を抑える設定(無料枠のクォータ超過=429 対策)。
+# fps は既定 1.0 → 0.2(5秒に1フレーム)。音声主体の動画なら精度への影響は小さい。
+GEMINI_VIDEO_FPS = 0.2
+GEMINI_MEDIA_RESOLUTION = "MEDIA_RESOLUTION_LOW"
+# 連続する動画要約の間に挟む待機秒数(1分あたりレート上限=TPM 対策)。
+GEMINI_REQUEST_SPACING_SEC = 5
+
 SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 465
 
