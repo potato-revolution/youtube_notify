@@ -1,3 +1,22 @@
 {
-  "channels": []
+  "channels": [
+    {
+      "channel_id": "UCf-wG6PlxW7rpixx1tmODJw",
+      "handle": "@jarujaruisland8111",
+      "title": "ジャルジャルアイランド JARUJARU ISLAND",
+      "added_at": "2026-07-08T21:05:45.734523+09:00"
+    },
+    {
+      "channel_id": "UCpLu0KjNy616-E95gPx7LZg",
+      "handle": "@yurucom",
+      "title": "ゆるコンピュータ科学ラジオ",
+      "added_at": "2026-07-08T21:05:46.422618+09:00"
+    },
+    {
+      "channel_id": "UC8J3Sb2XMHCbOzzKaHqFW2Q",
+      "handle": "@津田圭介の終わらない恋愛",
+      "title": "津田圭介の終わらない恋愛",
+      "added_at": "2026-07-08T21:05:47.106165+09:00"
+    }
+  ]
 }

@@ -10,7 +10,12 @@ from app.config import HTTP_TIMEOUT, RSS_URL_TEMPLATE
 from app.models import Channel
 
 _CHANNEL_URL_RE = re.compile(r"youtube\.com/channel/(UC[\w-]{22})")
-_CHANNEL_ID_IN_PAGE_RE = re.compile(r'"channelId"\s*:\s*"(UC[\w-]{22})"')
+# チャンネルページ内の channel_id 埋め込みパターン(YouTube の構造変更に備え複数を順に試す)
+_CHANNEL_ID_IN_PAGE_RES = [
+    re.compile(r"feeds/videos\.xml\?channel_id=(UC[\w-]{22})"),  # RSS alternate リンク
+    re.compile(r'"channelId"\s*:\s*"(UC[\w-]{22})"'),
+    re.compile(r'"browseId"\s*:\s*"(UC[\w-]{22})"'),
+]
 _HANDLE_RE = re.compile(r"^@[\w.\-]+$")
 _HANDLE_URL_RE = re.compile(r"youtube\.com/(@[\w.\-]+)")
 
@@ -65,10 +70,11 @@ class ChannelResolver:
             raise ChannelResolveError(
                 f"チャンネルページを取得できません: {handle} ({type(e).__name__})"
             ) from e
-        m = _CHANNEL_ID_IN_PAGE_RE.search(resp.text)
-        if not m:
-            raise ChannelResolveError(f"channel_id を特定できません: {handle}")
-        return m.group(1)
+        for pattern in _CHANNEL_ID_IN_PAGE_RES:
+            m = pattern.search(resp.text)
+            if m:
+                return m.group(1)
+        raise ChannelResolveError(f"channel_id を特定できません: {handle}")
 
     def _fetch_channel_title(self, channel_id: str) -> str:
         """RSS からチャンネル名を取得する。失敗しても解決自体は成功とする。"""
