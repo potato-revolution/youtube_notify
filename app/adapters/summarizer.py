@@ -50,12 +50,19 @@ class Summarizer:
             logger.warning("要約失敗: video_id=%s %s", video.video_id, _describe_error(e))
             video.summary = None
             video.summary_ok = False
+            # 一時的失敗(429/5xx)は次回実行で再試行できるよう印を付ける。
+            video.summary_retryable = _is_retryable(e)
         return video
 
     def _generate_with_retry(self, video: Video) -> str:
-        """一時的な ServerError(5xx)のみ数回リトライする。4xx は即座に諦める。"""
-        attempts = config.GEMINI_RETRY + 1
-        for attempt in range(1, attempts + 1):
+        """一時的な ServerError(5xx)とレート制限(429)を数回リトライする。
+
+        429 は RPM/TPM 窓のリセットを見込んで 5xx より長く待つ。それ以外の 4xx は
+        即座に諦める。リトライを使い切ったら最後のエラーを送出する。
+        """
+        server_left = config.GEMINI_RETRY
+        rate_left = config.GEMINI_RATE_LIMIT_RETRY
+        while True:
             try:
                 response = self._client.models.generate_content(
                     model=self._model,
@@ -74,23 +81,43 @@ class Summarizer:
                 )
                 return (response.text or "").strip()
             except errors.ServerError as e:
-                if attempt >= attempts:
+                if server_left <= 0:
                     raise
-                logger.info(
-                    "一時エラーで再試行 (%d/%d): video_id=%s %s",
-                    attempt,
-                    attempts - 1,
-                    video.video_id,
-                    _describe_error(e),
-                )
-                time.sleep(config.GEMINI_RETRY_WAIT_SEC)
-        return ""  # 到達しない(ループ内で return / raise する)
+                server_left -= 1
+                self._log_retry(video, e, config.GEMINI_RETRY_WAIT_SEC)
+            except errors.ClientError as e:
+                if e.code != 429 or rate_left <= 0:
+                    raise
+                rate_left -= 1
+                self._log_retry(video, e, config.GEMINI_RATE_LIMIT_WAIT_SEC)
+
+    def _log_retry(self, video: Video, e: Exception, wait_sec: int) -> None:
+        logger.info(
+            "一時エラーで再試行 (%ds 待機): video_id=%s %s",
+            wait_sec,
+            video.video_id,
+            _describe_error(e),
+        )
+        time.sleep(wait_sec)
 
     def _space_requests(self) -> None:
         """2本目以降の呼び出し前に待機し、1分あたりレート上限(TPM)超過を避ける。"""
         if self._made_call and config.GEMINI_REQUEST_SPACING_SEC > 0:
             time.sleep(config.GEMINI_REQUEST_SPACING_SEC)
         self._made_call = True
+
+
+def _is_retryable(e: Exception) -> bool:
+    """次回実行での再試行で解消しうる一時的失敗か判定する。
+
+    レート/クォータ超過(429)とサーバ混雑(5xx)を一時的とみなす。メンバー限定・
+    非公開・年齢制限などの 4xx や空要約は恒久的失敗として既読化させる。
+    """
+    if isinstance(e, errors.ServerError):
+        return True
+    if isinstance(e, errors.APIError):
+        return e.code == 429
+    return False
 
 
 def _describe_error(e: Exception) -> str:

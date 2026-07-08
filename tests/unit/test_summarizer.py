@@ -43,6 +43,8 @@ def make_summarizer(monkeypatch, results: list) -> tuple[Summarizer, FakeModels]
     # 実クライアントを作らずに Summarizer を組み立てる
     monkeypatch.setattr(summarizer_module.config, "GEMINI_RETRY", 2, raising=True)
     monkeypatch.setattr(summarizer_module.config, "GEMINI_RETRY_WAIT_SEC", 0, raising=True)
+    monkeypatch.setattr(summarizer_module.config, "GEMINI_RATE_LIMIT_RETRY", 1, raising=True)
+    monkeypatch.setattr(summarizer_module.config, "GEMINI_RATE_LIMIT_WAIT_SEC", 0, raising=True)
     monkeypatch.setattr(summarizer_module.config, "GEMINI_REQUEST_SPACING_SEC", 0, raising=True)
     monkeypatch.setattr(summarizer_module.time, "sleep", lambda *_: None)
     s = Summarizer.__new__(Summarizer)
@@ -67,6 +69,12 @@ def make_client_error() -> errors.ClientError:
     )
 
 
+def make_permanent_client_error() -> errors.ClientError:
+    return errors.ClientError(
+        403, {"error": {"status": "PERMISSION_DENIED", "message": "members only"}}
+    )
+
+
 def test_summarize_success(monkeypatch):
     s, models = make_summarizer(monkeypatch, ["【概要】要約本文"])
     result = s.summarize(make_video())
@@ -88,20 +96,38 @@ def test_summarize_server_error_exhausts_retries(monkeypatch):
     )
     result = s.summarize(make_video())
     assert result.summary_ok is False
+    assert result.summary_retryable is True  # 5xx は一時的失敗
     assert models.calls == 3  # 初回 + リトライ2回
 
 
-def test_summarize_client_error_not_retried(monkeypatch):
-    s, models = make_summarizer(monkeypatch, [make_client_error(), "使われない"])
+def test_summarize_retries_rate_limit_then_succeeds(monkeypatch):
+    s, models = make_summarizer(monkeypatch, [make_client_error(), "要約"])
+    result = s.summarize(make_video())
+    assert result.summary_ok is True
+    assert models.calls == 2  # 429 は1回リトライで成功
+
+
+def test_summarize_rate_limit_exhausts_retries_is_retryable(monkeypatch):
+    s, models = make_summarizer(monkeypatch, [make_client_error(), make_client_error()])
     result = s.summarize(make_video())
     assert result.summary_ok is False
-    assert models.calls == 1  # 4xx はリトライしない
+    assert result.summary_retryable is True  # 429 は一時的失敗 → 次回リトライ対象
+    assert models.calls == 2  # 初回 + レート制限リトライ1回
+
+
+def test_summarize_permanent_client_error_not_retried(monkeypatch):
+    s, models = make_summarizer(monkeypatch, [make_permanent_client_error(), "使われない"])
+    result = s.summarize(make_video())
+    assert result.summary_ok is False
+    assert result.summary_retryable is False  # 429 以外の 4xx は恒久的失敗 → 既読化
+    assert models.calls == 1  # 429 以外の 4xx はリトライしない
 
 
 def test_summarize_empty_text_is_failure(monkeypatch):
     s, _ = make_summarizer(monkeypatch, ["   "])
     result = s.summarize(make_video())
     assert result.summary_ok is False
+    assert result.summary_retryable is False  # 空要約は既読化(無限リトライを防ぐ)
 
 
 def test_summarize_applies_low_fps_and_media_resolution(monkeypatch):

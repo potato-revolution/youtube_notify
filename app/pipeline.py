@@ -89,8 +89,14 @@ def run_pipeline(
     sender.send(subject, html_body)  # 失敗時は例外 → seen 未更新のまま異常終了
 
     # 送信成功後にのみ seen を更新する(送信前に落ちても翌日リカバリ可能にするため)。
-    # 除外分も併せて既読化する。
-    store.save_seen([v.video_id for v in new_videos] + [v.video_id for v in excluded])
+    # 一時的失敗(429/5xx)は既読化せず翌日以降の実行で自動リトライする。
+    # 成功・恒久的失敗・除外分のみ既読化する。
+    retry_later = [v for v in new_videos if not v.summary_ok and v.summary_retryable]
+    retry_ids = {v.video_id for v in retry_later}
+    seen_now = [v.video_id for v in new_videos if v.video_id not in retry_ids]
+    store.save_seen(seen_now + [v.video_id for v in excluded])
+    if retry_later:
+        logger.info("一時的失敗で既読化を保留(次回リトライ): %d 本", len(retry_later))
 
     ok = sum(1 for v in new_videos if v.summary_ok)
     _log_kpi_summary(

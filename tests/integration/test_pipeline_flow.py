@@ -27,7 +27,18 @@ class FakeClassifier:
 
 
 class FakeSummarizer:
+    """指定 ID を失敗扱いにする。fail_retryable=True なら一時的失敗として印を付ける。"""
+
+    def __init__(self, fail_ids: tuple[str, ...] = (), fail_retryable: bool = True) -> None:
+        self._fail = set(fail_ids)
+        self._retryable = fail_retryable
+
     def summarize(self, video: Video) -> Video:
+        if video.video_id in self._fail:
+            video.summary = None
+            video.summary_ok = False
+            video.summary_retryable = self._retryable
+            return video
         video.summary = f"【概要】{video.title} の要約"
         video.summary_ok = True
         return video
@@ -148,6 +159,44 @@ def test_pipeline_excludes_shorts_and_lives(tmp_path):
     body = sender.sent[0][1]
     assert "動画a" in body and "動画b" not in body
     # 除外分も既読化され、翌日以降に再プローブされない
+    assert store.load_seen() == {"a", "b"}
+
+
+def test_pipeline_retryable_failure_is_not_marked_seen(tmp_path):
+    store = make_store(tmp_path)
+    sender = FakeSender()
+
+    # "b" は 429 相当の一時的失敗。既読化されず翌日以降にリトライされる
+    count = run_pipeline(
+        store=store,
+        fetcher=FakeFetcher([make_video("a"), make_video("b")]),
+        classifier=FakeClassifier(),
+        summarizer=FakeSummarizer(fail_ids=("b",), fail_retryable=True),
+        builder=MailBuilder(),
+        sender=sender,
+    )
+
+    assert count == 2  # 送信自体は当日分として行う
+    assert len(sender.sent) == 1
+    # 成功した "a" のみ既読化。一時的失敗の "b" は seen 未登録 → 次回リトライ
+    assert store.load_seen() == {"a"}
+
+
+def test_pipeline_permanent_failure_is_marked_seen(tmp_path):
+    store = make_store(tmp_path)
+    sender = FakeSender()
+
+    # "b" はメンバー限定等の恒久的失敗。再試行しても無駄なので既読化する
+    run_pipeline(
+        store=store,
+        fetcher=FakeFetcher([make_video("a"), make_video("b")]),
+        classifier=FakeClassifier(),
+        summarizer=FakeSummarizer(fail_ids=("b",), fail_retryable=False),
+        builder=MailBuilder(),
+        sender=sender,
+    )
+
+    # 恒久的失敗も既読化し、毎回の再試行・再表示を防ぐ
     assert store.load_seen() == {"a", "b"}
 
 
