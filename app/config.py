@@ -16,8 +16,13 @@ GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 SEEN_IDS_MAX = 5000
 
 # Gemini 1 リクエストのタイムアウト(ミリ秒)。
-# 長尺動画で処理が固まってもジョブ全体が止まらないよう上限を設ける。
-GEMINI_TIMEOUT_MS = 180_000
+# 長尺動画(40〜60分)でも処理を完了できるよう長めに取りつつ、
+# ハングでジョブ全体が止まらないよう上限は設ける。
+GEMINI_TIMEOUT_MS = 600_000
+
+# 一時的な ServerError(5xx=混雑等)に対する追加リトライ回数と待機秒数。
+GEMINI_RETRY = 2
+GEMINI_RETRY_WAIT_SEC = 10
 
 SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 465
