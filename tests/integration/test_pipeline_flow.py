@@ -16,6 +16,16 @@ class FakeFetcher:
         return list(self._videos)
 
 
+class FakeClassifier:
+    """指定 ID を Shorts / 終了済みライブ扱いで除外する(既定は除外なし)。"""
+
+    def __init__(self, exclude_ids: tuple[str, ...] = ()) -> None:
+        self._exclude = set(exclude_ids)
+
+    def is_excluded(self, video: Video) -> bool:
+        return video.video_id in self._exclude
+
+
 class FakeSummarizer:
     def summarize(self, video: Video) -> Video:
         video.summary = f"【概要】{video.title} の要約"
@@ -68,6 +78,7 @@ def test_pipeline_sends_one_mail_and_updates_seen(tmp_path):
     count = run_pipeline(
         store=store,
         fetcher=FakeFetcher([make_video("a"), make_video("b")]),
+        classifier=FakeClassifier(),
         summarizer=FakeSummarizer(),
         builder=MailBuilder(),
         sender=sender,
@@ -90,6 +101,7 @@ def test_pipeline_seen_videos_are_not_resent(tmp_path):
     count = run_pipeline(
         store=store,
         fetcher=FakeFetcher([make_video("a"), make_video("b")]),
+        classifier=FakeClassifier(),
         summarizer=FakeSummarizer(),
         builder=MailBuilder(),
         sender=sender,
@@ -108,6 +120,7 @@ def test_pipeline_send_failure_does_not_update_seen(tmp_path):
         run_pipeline(
             store=store,
             fetcher=FakeFetcher([make_video("a")]),
+            classifier=FakeClassifier(),
             summarizer=FakeSummarizer(),
             builder=MailBuilder(),
             sender=sender,
@@ -115,3 +128,42 @@ def test_pipeline_send_failure_does_not_update_seen(tmp_path):
 
     # 送信失敗時は seen 未更新 → 翌日以降に再通知できる
     assert store.load_seen() == set()
+
+
+def test_pipeline_excludes_shorts_and_lives(tmp_path):
+    store = make_store(tmp_path)
+    sender = FakeSender()
+
+    # "b" を Shorts/ライブ扱いで除外。要約・送信されず、既読化のみされる
+    count = run_pipeline(
+        store=store,
+        fetcher=FakeFetcher([make_video("a"), make_video("b")]),
+        classifier=FakeClassifier(exclude_ids=("b",)),
+        summarizer=FakeSummarizer(),
+        builder=MailBuilder(),
+        sender=sender,
+    )
+
+    assert count == 1
+    body = sender.sent[0][1]
+    assert "動画a" in body and "動画b" not in body
+    # 除外分も既読化され、翌日以降に再プローブされない
+    assert store.load_seen() == {"a", "b"}
+
+
+def test_pipeline_all_excluded_does_not_send_but_marks_seen(tmp_path):
+    store = make_store(tmp_path)
+    sender = FakeSender()
+
+    count = run_pipeline(
+        store=store,
+        fetcher=FakeFetcher([make_video("a"), make_video("b")]),
+        classifier=FakeClassifier(exclude_ids=("a", "b")),
+        summarizer=FakeSummarizer(),
+        builder=MailBuilder(),
+        sender=sender,
+    )
+
+    assert count == 0
+    assert sender.sent == []  # 全て除外の日は送信しない
+    assert store.load_seen() == {"a", "b"}  # 再プローブ防止のため既読化する

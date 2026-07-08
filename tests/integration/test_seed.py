@@ -16,6 +16,16 @@ class FakeFetcher:
         return list(self._videos)
 
 
+class FakeClassifier:
+    """指定 ID を Shorts / 終了済みライブ扱いで除外する(既定は除外なし)。"""
+
+    def __init__(self, exclude_ids: tuple[str, ...] = ()) -> None:
+        self._exclude = set(exclude_ids)
+
+    def is_excluded(self, video: Video) -> bool:
+        return video.video_id in self._exclude
+
+
 class FakeSummarizer:
     def __init__(self) -> None:
         self.calls = 0
@@ -86,6 +96,7 @@ def test_seed_summarizes_only_recent_and_marks_all_seen(tmp_path):
         recent_per_channel=2,
         store=store,
         fetcher=FakeFetcher(videos),
+        classifier=FakeClassifier(),
         summarizer=summarizer,
         builder=MailBuilder(),
         sender=sender,
@@ -109,9 +120,37 @@ def test_seed_send_failure_does_not_update_seen(tmp_path):
             recent_per_channel=2,
             store=store,
             fetcher=FakeFetcher(videos),
+            classifier=FakeClassifier(),
             summarizer=FakeSummarizer(),
             builder=MailBuilder(),
             sender=FakeSender(fail=True),
         )
 
     assert store.load_seen() == set()
+
+
+def test_seed_excludes_shorts_and_lives_but_marks_all_seen(tmp_path):
+    store = make_store(tmp_path)
+    seed_two_channels(store)
+    videos = [make_video(f"a{i}", "chA") for i in range(1, 4)] + [
+        make_video(f"b{i}", "chB") for i in range(1, 4)
+    ]
+    summarizer = FakeSummarizer()
+    sender = FakeSender()
+
+    # 各チャンネルの1本目を除外。直近2本は除外後の残りから選ばれる
+    count = seed_pipeline(
+        recent_per_channel=2,
+        store=store,
+        fetcher=FakeFetcher(videos),
+        classifier=FakeClassifier(exclude_ids=("a1", "b1")),
+        summarizer=summarizer,
+        builder=MailBuilder(),
+        sender=sender,
+    )
+
+    assert count == 4  # a2,a3,b2,b3 の各チャンネル2本
+    assert summarizer.calls == 4
+    assert len(sender.sent) == 1
+    # 除外分含む新着6本すべてが既読化される
+    assert len(store.load_seen()) == 6
