@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015"
+      xmlns:media="http://search.yahoo.com/mrss/"
+      xmlns="http://www.w3.org/2005/Atom">
+  <link rel="self" href="https://www.youtube.com/feeds/videos.xml?channel_id=UCsampleSAMPLEsampleSA"/>
+  <id>yt:channel:sampleSAMPLEsampleSA</id>
+  <yt:channelId>sampleSAMPLEsampleSA</yt:channelId>
+  <title>サンプルチャンネル</title>
+  <entry>
+    <id>yt:video:vid00000001</id>
+    <yt:videoId>vid00000001</yt:videoId>
+    <yt:channelId>UCsampleSAMPLEsampleSA</yt:channelId>
+    <title>テスト動画1</title>
+    <link rel="alternate" href="https://www.youtube.com/watch?v=vid00000001"/>
+    <published>2026-07-08T05:00:00+00:00</published>
+    <media:group>
+      <media:title>テスト動画1</media:title>
+      <media:description>動画1の概要欄テキスト</media:description>
+    </media:group>
+  </entry>
+  <entry>
+    <id>yt:video:vid00000002</id>
+    <yt:videoId>vid00000002</yt:videoId>
+    <yt:channelId>UCsampleSAMPLEsampleSA</yt:channelId>
+    <title>テスト動画2</title>
+    <link rel="alternate" href="https://www.youtube.com/watch?v=vid00000002"/>
+    <published>2026-07-08T09:30:00+00:00</published>
+    <media:group>
+      <media:title>テスト動画2</media:title>
+      <media:description>動画2の概要欄テキスト</media:description>
+    </media:group>
+  </entry>
+  <entry>
+    <id>yt:video:vid00000003</id>
+    <yt:videoId>vid00000003</yt:videoId>
+    <yt:channelId>UCsampleSAMPLEsampleSA</yt:channelId>
+    <title></title>
+    <link rel="alternate" href="https://www.youtube.com/watch?v=vid00000003"/>
+    <published>2026-07-08T10:00:00+00:00</published>
+  </entry>
+</feed>
