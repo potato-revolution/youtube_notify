@@ -1,12 +1,6 @@
 {
   "channels": [
     {
-      "channel_id": "UCf-wG6PlxW7rpixx1tmODJw",
-      "handle": "@jarujaruisland8111",
-      "title": "ジャルジャルアイランド JARUJARU ISLAND",
-      "added_at": "2026-07-08T21:05:45.734523+09:00"
-    },
-    {
       "channel_id": "UCpLu0KjNy616-E95gPx7LZg",
       "handle": "@yurucom",
       "title": "ゆるコンピュータ科学ラジオ",
@@ -35,6 +29,18 @@
       "handle": "@hirose__1999",
       "title": "ひろせチャンネル",
       "added_at": "2026-07-08T23:29:25.938348+09:00"
+    },
+    {
+      "channel_id": "UCCua7HI-jc6g_I-YxFYAL6g",
+      "handle": "@chintomodayo",
+      "title": "こじらせOLちんともの逆襲👙🍓",
+      "added_at": "2026-08-27T00:19:41.140470+09:00"
+    },
+    {
+      "channel_id": "UCGbBvmq9D54iSLNB7a6ARsQ",
+      "handle": "@yoshida-handmaid",
+      "title": "ヨシダコン【人生コンティニュー】",
+      "added_at": "2026-08-27T00:19:42.032072+09:00"
     }
   ]
 }
