@@ -2,10 +2,13 @@ name: notify
 
 on:
   schedule:
-    # GitHub Actions の schedule は高負荷時に1〜3時間遅延するため、
-    # 22:00 JST (13:00 UTC) より早めの半端な分に起動し、
-    # ジョブ内の "Wait until 22:00 JST" ステップで配信時刻まで待つ
-    - cron: "23 10 * * *" # 10:23 UTC = 19:23 JST に起動
+    # GitHub Actions の schedule は高負荷時に数時間遅延するため、
+    # 22:00 JST (13:00 UTC) より大幅に早く起動し、
+    # ジョブ内の "Wait until 22:00 JST" ステップで配信時刻まで待つ。
+    # 2本目は1本目が 13:00 UTC 以降まで遅延した場合の保険。
+    # 1本目が配信済みなら新着0件となり送信されない(seen.json による既読管理)
+    - cron: "23 8 * * *" # 08:23 UTC = 17:23 JST に起動し 13:00 UTC まで待機
+    - cron: "5 13 * * *" # 13:05 UTC = 22:05 JST(バックアップ)
   workflow_dispatch:
     inputs:
       seed_recent:
@@ -23,7 +26,8 @@ concurrency:
 jobs:
   notify:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    # 08:23 UTC 起動時は 13:00 UTC までの待機(最大約4.6時間)+パイプライン実行分が必要
+    timeout-minutes: 360
     steps:
       - name: Wait until 22:00 JST
         if: github.event_name == 'schedule'

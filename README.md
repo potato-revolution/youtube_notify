@@ -40,7 +40,7 @@ python -m app.add_channel "https://www.youtube.com/channel/UCxxxxxxxxxxxxxxxxxxx
 python -m app.run
 ```
 
-定時実行は GitHub Actions が毎晩 22:00 JST(cron `0 13 * * *`)に行う。手動トリガーは Actions タブの workflow_dispatch から。
+定時実行は GitHub Actions が毎晩 22:00 JST に行う(スケジュール遅延対策として cron `23 8 * * *` で早めに起動し 13:00 UTC まで待機。バックアップとして cron `5 13 * * *` も起動)。手動トリガーは Actions タブの workflow_dispatch から。
 
 ### 初期シード(登録直後に一度だけ)
 
