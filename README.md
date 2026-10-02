@@ -3,7 +3,7 @@
 監視対象の YouTube チャンネルの新着動画を毎晩 22:00 JST に検出し、Gemini で日本語要約して1通の HTML メールで通知する決定的パイプライン。
 
 - 新着検出: 無認証 RSS(API キー・OAuth 不要)
-- 要約: Gemini API に YouTube URL を直渡し(既定モデル: `gemini-2.5-flash`、`GEMINI_MODEL` で上書き可)
+- 要約: Gemini API に YouTube URL を直渡し(既定モデル: `gemini-2.5-flash`、`GEMINI_MODEL` で上書き可)。5xx(高負荷)は指数バックオフで再試行し、使い切ったら代替モデル(既定 `gemini-2.5-flash-lite`、`GEMINI_FALLBACK_MODEL` で上書き可、空で無効)へ切替
 - 通知: Gmail SMTP(アプリパスワード)で自分宛てに送信。新着0本の日は送信しない
 - 状態: `state/seen.json` に通知済み ID を記録し、リポジトリへコミットして書き戻す(取りこぼし・二重通知なし)
 - 実行基盤: GitHub Actions scheduled workflow(`.github/workflows/notify.yml`)

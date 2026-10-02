@@ -26,19 +26,27 @@ SUMMARY_PROMPT = """\
 
 
 class Summarizer:
-    def __init__(self, api_key: str | None = None, model: str | None = None) -> None:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str | None = None,
+        fallback_model: str | None = None,
+    ) -> None:
         self._client = genai.Client(
             api_key=api_key or config.gemini_api_key(),
             http_options=types.HttpOptions(timeout=config.GEMINI_TIMEOUT_MS),
         )
         self._model = model or config.GEMINI_MODEL
+        self._fallback_model = (
+            fallback_model if fallback_model is not None else config.GEMINI_FALLBACK_MODEL
+        )
         self._made_call = False  # 動画間スペーシング用(初回だけ待たない)
 
     def summarize(self, video: Video) -> Video:
         """summary / summary_ok を埋めて返す。失敗時は代替表示(呼び出し側)に委ねる。"""
         self._space_requests()
         try:
-            text = self._generate_with_retry(video)
+            text = self._generate_with_fallback(video)
             if not text:
                 raise ValueError("empty summary")
             video.summary = text
@@ -54,18 +62,36 @@ class Summarizer:
             video.summary_retryable = _is_retryable(e)
         return video
 
-    def _generate_with_retry(self, video: Video) -> str:
+    def _generate_with_fallback(self, video: Video) -> str:
+        """主モデルが 5xx でリトライを使い切ったら代替モデルで同じ手順をやり直す。"""
+        try:
+            return self._generate_with_retry(video, self._model)
+        except errors.ServerError as e:
+            if not self._fallback_model or self._fallback_model == self._model:
+                raise
+            logger.info(
+                "主モデル %s が応答しないため代替モデル %s へ切替: video_id=%s %s",
+                self._model,
+                self._fallback_model,
+                video.video_id,
+                _describe_error(e),
+            )
+            return self._generate_with_retry(video, self._fallback_model)
+
+    def _generate_with_retry(self, video: Video, model: str) -> str:
         """一時的な ServerError(5xx)とレート制限(429)を数回リトライする。
 
-        429 は RPM/TPM 窓のリセットを見込んで 5xx より長く待つ。それ以外の 4xx は
-        即座に諦める。リトライを使い切ったら最後のエラーを送出する。
+        5xx は指数バックオフ(初回待機 × 2^n)で間隔を空けて粘る。429 は RPM/TPM 窓の
+        リセットを見込んで固定で待つ。それ以外の 4xx は即座に諦める。
+        リトライを使い切ったら最後のエラーを送出する。
         """
         server_left = config.GEMINI_RETRY
+        server_wait = config.GEMINI_RETRY_WAIT_SEC
         rate_left = config.GEMINI_RATE_LIMIT_RETRY
         while True:
             try:
                 response = self._client.models.generate_content(
-                    model=self._model,
+                    model=model,
                     contents=[
                         types.Part(
                             file_data=types.FileData(file_uri=video.url, mime_type="video/*"),
@@ -79,12 +105,22 @@ class Summarizer:
                         media_resolution=config.GEMINI_MEDIA_RESOLUTION,
                     ),
                 )
-                return (response.text or "").strip()
+                text = (response.text or "").strip()
+                if not text:
+                    # セーフティ判定等で本文が返らなかった場合、理由を残して原因を追えるようにする
+                    logger.warning(
+                        "空の要約: video_id=%s model=%s %s",
+                        video.video_id,
+                        model,
+                        _describe_empty_response(response),
+                    )
+                return text
             except errors.ServerError as e:
                 if server_left <= 0:
                     raise
                 server_left -= 1
-                self._log_retry(video, e, config.GEMINI_RETRY_WAIT_SEC)
+                self._log_retry(video, e, server_wait)
+                server_wait *= 2
             except errors.ClientError as e:
                 if e.code != 429 or rate_left <= 0:
                     raise
@@ -126,3 +162,12 @@ def _describe_error(e: Exception) -> str:
         message = (e.message or "").replace("\n", " ")[:200]
         return f"reason=APIError code={e.code} status={e.status} message={message!r}"
     return f"reason={type(e).__name__}"
+
+
+def _describe_empty_response(response: object) -> str:
+    """本文なし応答の理由(block_reason / finish_reason)をログ用に組み立てる。"""
+    feedback = getattr(response, "prompt_feedback", None)
+    block_reason = getattr(feedback, "block_reason", None)
+    candidates = getattr(response, "candidates", None) or []
+    finish_reason = getattr(candidates[0], "finish_reason", None) if candidates else None
+    return f"block_reason={block_reason} finish_reason={finish_reason}"

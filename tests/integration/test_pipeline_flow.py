@@ -176,10 +176,32 @@ def test_pipeline_retryable_failure_is_not_marked_seen(tmp_path):
         sender=sender,
     )
 
-    assert count == 2  # 送信自体は当日分として行う
+    assert count == 1  # 成功した "a" のみ通知
     assert len(sender.sent) == 1
+    body = sender.sent[0][1]
+    # 一時的失敗の "b" はメールに載せず、次回成功時に初めて通知する
+    assert "動画a" in body and "動画b" not in body
     # 成功した "a" のみ既読化。一時的失敗の "b" は seen 未登録 → 次回リトライ
     assert store.load_seen() == {"a"}
+
+
+def test_pipeline_all_retryable_failures_does_not_send(tmp_path):
+    store = make_store(tmp_path)
+    sender = FakeSender()
+
+    # 全て 503 相当の一時的失敗。送信せず、除外分だけ既読化して次回に回す
+    count = run_pipeline(
+        store=store,
+        fetcher=FakeFetcher([make_video("a"), make_video("b"), make_video("c")]),
+        classifier=FakeClassifier(exclude_ids=("c",)),
+        summarizer=FakeSummarizer(fail_ids=("a", "b"), fail_retryable=True),
+        builder=MailBuilder(),
+        sender=sender,
+    )
+
+    assert count == 0
+    assert sender.sent == []  # 「要約できませんでした」だけのメールは送らない
+    assert store.load_seen() == {"c"}
 
 
 def test_pipeline_permanent_failure_is_marked_seen(tmp_path):

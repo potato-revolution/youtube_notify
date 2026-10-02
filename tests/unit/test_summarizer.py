@@ -28,9 +28,11 @@ class FakeModels:
     def __init__(self, results: list) -> None:
         self._results = list(results)
         self.calls = 0
+        self.models_used: list[str] = []
 
     def generate_content(self, model, contents, config=None):
         self.calls += 1
+        self.models_used.append(model)
         self.last_contents = contents
         self.last_config = config
         result = self._results.pop(0)
@@ -55,6 +57,7 @@ def make_summarizer(monkeypatch, results: list) -> tuple[Summarizer, FakeModels]
 
     s._client = FakeClient()
     s._model = "gemini-test"
+    s._fallback_model = ""  # 既定はフォールバック無効(個別テストで設定)
     s._made_call = False
     return s, fake_models
 
@@ -98,6 +101,44 @@ def test_summarize_server_error_exhausts_retries(monkeypatch):
     assert result.summary_ok is False
     assert result.summary_retryable is True  # 5xx は一時的失敗
     assert models.calls == 3  # 初回 + リトライ2回
+
+
+def test_summarize_server_error_backoff_doubles_wait(monkeypatch):
+    s, _ = make_summarizer(monkeypatch, [make_server_error(), make_server_error(), "要約"])
+    monkeypatch.setattr(summarizer_module.config, "GEMINI_RETRY_WAIT_SEC", 60, raising=True)
+    waits: list[int] = []
+    monkeypatch.setattr(summarizer_module.time, "sleep", waits.append)
+    result = s.summarize(make_video())
+    assert result.summary_ok is True
+    assert waits == [60, 120]  # 指数バックオフ
+
+
+def test_summarize_falls_back_to_secondary_model_after_server_errors(monkeypatch):
+    # 主モデルで 初回+2回 すべて 5xx → 代替モデルで成功
+    s, models = make_summarizer(
+        monkeypatch, [make_server_error(), make_server_error(), make_server_error(), "要約"]
+    )
+    s._fallback_model = "gemini-fallback"
+    result = s.summarize(make_video())
+    assert result.summary_ok is True
+    assert models.models_used == ["gemini-test"] * 3 + ["gemini-fallback"]
+
+
+def test_summarize_fallback_also_failing_is_retryable(monkeypatch):
+    s, models = make_summarizer(monkeypatch, [make_server_error()] * 6)
+    s._fallback_model = "gemini-fallback"
+    result = s.summarize(make_video())
+    assert result.summary_ok is False
+    assert result.summary_retryable is True
+    assert models.calls == 6  # 主 3回 + 代替 3回
+
+
+def test_summarize_no_fallback_on_permanent_client_error(monkeypatch):
+    s, models = make_summarizer(monkeypatch, [make_permanent_client_error(), "使われない"])
+    s._fallback_model = "gemini-fallback"
+    result = s.summarize(make_video())
+    assert result.summary_ok is False
+    assert models.models_used == ["gemini-test"]  # 4xx では代替モデルに切り替えない
 
 
 def test_summarize_retries_rate_limit_then_succeeds(monkeypatch):

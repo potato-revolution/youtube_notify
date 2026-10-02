@@ -11,6 +11,9 @@ RSS_URL_TEMPLATE = "https://www.youtube.com/feeds/videos.xml?channel_id={channel
 
 # 要約向けモデル。環境変数 GEMINI_MODEL で上書き可能。
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+# 主モデルが 5xx(高負荷等)でリトライを使い切った場合に切り替える代替モデル。
+# 環境変数 GEMINI_FALLBACK_MODEL で上書き可能。空文字でフォールバック無効。
+GEMINI_FALLBACK_MODEL = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash-lite")
 
 # seen.json の保持上限(超過分は古い順に切り詰め)
 SEEN_IDS_MAX = 5000
@@ -20,9 +23,11 @@ SEEN_IDS_MAX = 5000
 # ハングでジョブ全体が止まらないよう上限は設ける。
 GEMINI_TIMEOUT_MS = 600_000
 
-# 一時的な ServerError(5xx=混雑等)に対する追加リトライ回数と待機秒数。
-GEMINI_RETRY = 2
-GEMINI_RETRY_WAIT_SEC = 10
+# 一時的な ServerError(5xx=混雑等)に対する追加リトライ回数と初回待機秒数。
+# 待機は指数バックオフ(60s → 120s → 240s)。高負荷(503)は数分〜数時間続くことが
+# あるため、短い間隔で叩き直すより間隔を空けて粘る。使い切ったら代替モデルへ。
+GEMINI_RETRY = 3
+GEMINI_RETRY_WAIT_SEC = 60
 
 # レート/クォータ超過(429)に対する追加リトライ回数と待機秒数。
 # RPM/TPM は約60秒窓でリセットされるため、5xx より長めに待ってから再試行する。

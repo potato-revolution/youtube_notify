@@ -85,24 +85,31 @@ def run_pipeline(
     for video in new_videos:
         summarizer.summarize(video)
 
-    subject, html_body = builder.build(new_videos)
+    # 一時的失敗(429/5xx)は既読化せず、メールにも載せない。次回実行で再要約して
+    # 成功したときに初めて通知する(「要約できませんでした」を2度送らない)。
+    # 成功・恒久的失敗(メンバー限定等)のみ当日分として通知・既読化する。
+    retry_later = [v for v in new_videos if not v.summary_ok and v.summary_retryable]
+    to_notify = [v for v in new_videos if v.summary_ok or not v.summary_retryable]
+    if retry_later:
+        logger.info("一時的失敗で通知・既読化を保留(次回リトライ): %d 本", len(retry_later))
+
+    ok = sum(1 for v in new_videos if v.summary_ok)
+    ng = len(new_videos) - ok
+    if not to_notify:
+        # 全て一時的失敗なら送信せず、除外分だけ既読化して次回に回す
+        if excluded:
+            store.save_seen([v.video_id for v in excluded])
+        _log_kpi_summary(channels=len(channels), new=len(new_videos), ok=ok, ng=ng, sent=False)
+        return 0
+
+    subject, html_body = builder.build(to_notify)
     sender.send(subject, html_body)  # 失敗時は例外 → seen 未更新のまま異常終了
 
     # 送信成功後にのみ seen を更新する(送信前に落ちても翌日リカバリ可能にするため)。
-    # 一時的失敗(429/5xx)は既読化せず翌日以降の実行で自動リトライする。
-    # 成功・恒久的失敗・除外分のみ既読化する。
-    retry_later = [v for v in new_videos if not v.summary_ok and v.summary_retryable]
-    retry_ids = {v.video_id for v in retry_later}
-    seen_now = [v.video_id for v in new_videos if v.video_id not in retry_ids]
-    store.save_seen(seen_now + [v.video_id for v in excluded])
-    if retry_later:
-        logger.info("一時的失敗で既読化を保留(次回リトライ): %d 本", len(retry_later))
+    store.save_seen([v.video_id for v in to_notify] + [v.video_id for v in excluded])
 
-    ok = sum(1 for v in new_videos if v.summary_ok)
-    _log_kpi_summary(
-        channels=len(channels), new=len(new_videos), ok=ok, ng=len(new_videos) - ok, sent=True
-    )
-    return len(new_videos)
+    _log_kpi_summary(channels=len(channels), new=len(new_videos), ok=ok, ng=ng, sent=True)
+    return len(to_notify)
 
 
 def pick_recent_per_channel(videos: list[Video], recent: int) -> list[Video]:
